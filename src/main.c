@@ -17,6 +17,7 @@ typedef struct GrappleableRect {
 
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
+#define FLOOR_HEIGHT 150
 
 #define PLAYER_COLOR GREEN
 #define GRAPPLE_RECT_COLOR RED
@@ -61,9 +62,11 @@ int main() {
 	static const int FPS = 60;
 	static const char* GAME_TITLE = "Grappler";
 	static Player player = { { 100, 300, PLAYER_WIDTH, PLAYER_HEIGHT }, { 0, 50 } };
-	static Rectangle floors[] = { {0, 500, 300, 300}, {600, 500, 300, 300} };
-	GrappleableRect grappleableRects[MAX_NUM_GRAP_RECTS] = { { 400, 100, PLAYER_WIDTH, PLAYER_HEIGHT } };
-	int currNumRects = 1;
+	static Rectangle floors[] = { {0, SCREEN_HEIGHT - FLOOR_HEIGHT, FLOOR_HEIGHT, FLOOR_HEIGHT}, {600, SCREEN_HEIGHT - FLOOR_HEIGHT, SCREEN_WIDTH, FLOOR_HEIGHT} };
+	GrappleableRect grappleableRects[MAX_NUM_GRAP_RECTS] = { 
+		{ SCREEN_WIDTH / 4, 300, PLAYER_WIDTH, PLAYER_HEIGHT },
+	};
+	static const int currNumRects = 2;
 	float currGrappleLength;
 
 	InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, GAME_TITLE);
@@ -133,14 +136,6 @@ int main() {
 	return 0;
 }
 
-void SetupGrappleRects(GrappleableRect GrappleableRects[])
-{
-}
-
-void Grapple()
-{
-}
-
 void DrawPlayer(Player* player)
 {
 	DrawRectangleRec(player->collider, PLAYER_COLOR);
@@ -193,8 +188,6 @@ void updatePos(Player* player, Rectangle floorColliders[]) {
 	const Vector2 HorizontalPlane = { 1,0 };//, const PlayerPos = GetRectanglePosition(player->collider), const GrappleRectPos = player->grapplePos;
 	float theta = Vector2Angle(Vector2Normalize(HorizontalPlane), Vector2Normalize(Vector2Subtract(GetPlayerPos(player), player->grapplePos)));
 
-
-
 	if (player->isGrappling) {
 		const float tension = GRAPPLE_FORCE / Vector2Distance(GetPlayerPos(player), player->grapplePos) * tensionConstant * GetFrameTime();
 		player->velocity.x -= tension * cosf(theta);
@@ -209,8 +202,6 @@ void updatePos(Player* player, Rectangle floorColliders[]) {
 	if (!(player->isGrappling || player->isMidair) && IsKeyPressed(KEY_SPACE)) {
 		player->velocity.y = -JUMP_FORCE;
 	}
-
-
 
 	// Checks if the player moved off the screen and moves the player back if so
 	if (player->collider.x + PLAYER_WIDTH > SCREEN_WIDTH) {
@@ -236,23 +227,25 @@ void updatePos(Player* player, Rectangle floorColliders[]) {
 		float y = player->currGrappleLength * sinf(theta) + player->grapplePos.y;
 		DrawLine(player->grapplePos.x, player->grapplePos.y, x, y, BLACK);
 
-		if (Vector2Distance(GetPlayerPos(player), player->grapplePos) > player->currGrappleLength) {
+		if (Vector2Distance(GetPlayerPos(player), player->grapplePos) > player->currGrappleLength)
+		{
 			player->collider.x = x;
 			player->collider.y = y;
 			float currVelocityMagnitude = Vector2Length(player->velocity);
-			Vector2 playerToGrappleDir = Vector2Normalize(Vector2Subtract(GetPlayerPos(player), player->grapplePos));
-			//player->velocity = Vector2Zero();
-			int angleToRotate = 90;
-			if (player->velocity.x > 0)
-			{
-				angleToRotate *= -1;
-			}
+			if (currVelocityMagnitude > EPSILON) {
+				Vector2 playerToGrappleDir = Vector2Normalize(Vector2Subtract(GetPlayerPos(player), player->grapplePos));
+				int angleToRotate = 90;
+				if (player->velocity.x > 0)
+				{
+					angleToRotate *= -1;
+				}
 
-			Vector2 rotatedDir = Vector2Rotate(playerToGrappleDir, angleToRotate * DEG2RAD);
-			//Vector2 rotatedDir = {1,0};
-			Vector2 newVelocity = Vector2Scale(rotatedDir, currVelocityMagnitude);
-			player->velocity = newVelocity;
-			DrawLine(GetPlayerPos(player).x, GetPlayerPos(player).y, GetPlayerPos(player).x + newVelocity.x, GetPlayerPos(player).y + newVelocity.y, DEFAULT_COLOR);
+				Vector2 rotatedDir = Vector2Rotate(playerToGrappleDir, angleToRotate * DEG2RAD);
+				//Vector2 rotatedDir = {1,0};
+				Vector2 newVelocity = Vector2Scale(rotatedDir, currVelocityMagnitude);
+				player->velocity = newVelocity;
+				DrawLine(GetPlayerPos(player).x, GetPlayerPos(player).y, GetPlayerPos(player).x + newVelocity.x, GetPlayerPos(player).y + newVelocity.y, DEFAULT_COLOR);
+			}
 		}
 	}
 
@@ -280,7 +273,5 @@ void updatePos(Player* player, Rectangle floorColliders[]) {
 			isColliding = true;
 		}
 	}
-	
-
 	player->isMidair = !isColliding;
 }
