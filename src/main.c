@@ -36,9 +36,11 @@ typedef struct Player {
 	// Grapple
 	bool isGrappling;
 	Vector2 grapplePos;
-	float currGrappleLength;
+	float CurrMaxGrappleLength;
 	Vector2 GrapplePathPoints[MAX_GRAPPLE_POINTS_LEN];
 	int CurrGrapplePointCount;
+	bool IsInGrapplingWindow;
+	double lastFlipTime;
 } Player;
 
 int getDirectionX();
@@ -65,9 +67,10 @@ int main() {
 	static Rectangle floors[] = { {0, SCREEN_HEIGHT - FLOOR_HEIGHT, FLOOR_HEIGHT, FLOOR_HEIGHT}, {600, SCREEN_HEIGHT - FLOOR_HEIGHT, SCREEN_WIDTH, FLOOR_HEIGHT} };
 	GrappleableRect grappleableRects[MAX_NUM_GRAP_RECTS] = { 
 		{ SCREEN_WIDTH / 4, 300, PLAYER_WIDTH, PLAYER_HEIGHT },
+		{ SCREEN_WIDTH / 2, 300, PLAYER_WIDTH, PLAYER_HEIGHT },
 	};
 	static const int currNumRects = 2;
-	float currGrappleLength;
+	float CurrMaxGrappleLength;
 
 	InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, GAME_TITLE);
 	//HideCursor();
@@ -78,12 +81,9 @@ int main() {
 		BeginDrawing();
 		ClearBackground(BLUE);
 		DrawRectangles(floors, sizeof(floors) / sizeof(Rectangle), FLOOR_COLOR);
-		//for (int i = 0; i < sizeof(floors) / sizeof(Rectangle); i++) {
-		//	DrawRectangleRec(floors[i], FLOOR_COLOR);
-		//}
-		// Grapple
 		Vector2 MousePos = GetMousePosition();
-		for (int currRect = 0; currRect < 1; currRect++)
+		bool foundGrapple = false;
+		for (int currRect = 0; currRect < 2; currRect++)
 		{
 			const GrappleableRect* currRectRef = &grappleableRects[currRect];
 			Vector2 playerToRect = (Vector2){ player.collider.x - currRectRef->collider.x, player.collider.y - currRectRef->collider.y };
@@ -94,10 +94,11 @@ int main() {
 				DrawRectangle(GetMouseX(), GetMouseY(), 20, 20, PLAYER_COLOR);
 				if (CheckCollisionPointRec(MousePos, currRectRef->collider))
 				{
+					foundGrapple = true;
 					if (!player.isGrappling) {
 						player.isGrappling = true;
 						player.grapplePos = GetRectanglePosition(currRectRef->collider);
-						player.currGrappleLength = Vector2Distance((Vector2) { player.collider.x, player.collider.y }, (Vector2) { currRectRef->collider.x, currRectRef->collider.y });
+						player.CurrMaxGrappleLength = Vector2Distance((Vector2) { player.collider.x, player.collider.y }, (Vector2) { currRectRef->collider.x, currRectRef->collider.y });
 						player.CurrGrapplePointCount = 0;
 						
 						DrawLine(player.collider.x + PLAYER_WIDTH / 2, player.collider.y + PLAYER_HEIGHT / 2, GetMouseX(), GetMouseY(), RED);
@@ -105,7 +106,7 @@ int main() {
 					ColorToDrawRect = PURPLE;
 				}
 				else {
-					player.isGrappling = false;
+					//player.isGrappling = false;
 				}
 
 				if (IsKeyDown(KEY_E)) {
@@ -117,15 +118,22 @@ int main() {
 				}
 			}
 			else {
-				player.isGrappling = false;
-				if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
-				{
-					player.collider.x = MousePos.x;
-					player.collider.y = MousePos.y;
-					player.velocity = Vector2Zero();
-				}
+				//player.isGrappling = false;
 			}
 			DrawRectangleRec(currRectRef->collider, ColorToDrawRect);
+		}
+		player.isGrappling = foundGrapple;
+
+		if (IsKeyDown(KEY_ESCAPE))
+		{
+			CloseWindow();
+		}
+
+		if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
+		{
+			player.collider.x = MousePos.x;
+			player.collider.y = MousePos.y;
+			player.velocity = Vector2Zero();
 		}
 		updatePos(&player, floors);
 		DrawPlayer(&player);
@@ -169,6 +177,7 @@ void DrawPlayerDebug(Player* player) {
 	DrawText(PositionText, 50, TextStartPosY + YSpacing * CurrNumText++, DEBUG_FONT_SIZE, BLACK);
 	DrawText(VelocityText, 50, TextStartPosY + YSpacing * CurrNumText++, DEBUG_FONT_SIZE, BLACK);
 	DrawText(PlayerStateText, 50, TextStartPosY + YSpacing * CurrNumText++, DEBUG_FONT_SIZE, BLACK);
+	DrawLine(GetPlayerPos(player).x, GetPlayerPos(player).y, GetPlayerPos(player).x + player->velocity.x, GetPlayerPos(player).y + player->velocity.y, PLAYER_COLOR);
 	if (player->isGrappling)
 	{
 
@@ -179,7 +188,7 @@ void DrawPlayerDebug(Player* player) {
 		player->GrapplePathPoints[player->CurrGrapplePointCount++] = GetRectanglePosition(player->collider);
 		for (int i = 0; i < player->CurrGrapplePointCount; i++)
 		{
-			DrawCircle(player->GrapplePathPoints[i].x, player->GrapplePathPoints[i].y, 2, RED);
+			DrawCircle(player->GrapplePathPoints[i].x, player->GrapplePathPoints[i].y, 1, RED);
 		}
 	}
 }
@@ -187,16 +196,6 @@ void DrawPlayerDebug(Player* player) {
 void updatePos(Player* player, Rectangle floorColliders[]) {
 	const Vector2 HorizontalPlane = { 1,0 };//, const PlayerPos = GetRectanglePosition(player->collider), const GrappleRectPos = player->grapplePos;
 	float theta = Vector2Angle(Vector2Normalize(HorizontalPlane), Vector2Normalize(Vector2Subtract(GetPlayerPos(player), player->grapplePos)));
-
-	if (player->isGrappling) {
-		const float tension = GRAPPLE_FORCE / Vector2Distance(GetPlayerPos(player), player->grapplePos) * tensionConstant * GetFrameTime();
-		player->velocity.x -= tension * cosf(theta);
-		player->velocity.y -= tension * sinf(theta);
-
-		char TensionText[1000];
-		sprintf(TensionText, "Tension (%.2f)\nTension Constant (%.2f)", tension, tensionConstant);
-		DrawText(TensionText, 500, 150, DEBUG_FONT_SIZE, BLACK);
-	}
 
 	// Jump logic
 	if (!(player->isGrappling || player->isMidair) && IsKeyPressed(KEY_SPACE)) {
@@ -213,42 +212,6 @@ void updatePos(Player* player, Rectangle floorColliders[]) {
 		player->velocity.x = 0;
 	}
 
-	// Grapple movement
-	if (player->isGrappling) {
-
-		// Debug Stuff
-		char thetaText[100], positionText[1000];
-
-		sprintf(thetaText, "Theta Deg (%.2f)", theta * RAD2DEG);
-		DrawText(thetaText, 50, 50, DEBUG_FONT_SIZE, BLACK);
-	
-
-		float x = player->currGrappleLength * cosf(theta) + player->grapplePos.x;
-		float y = player->currGrappleLength * sinf(theta) + player->grapplePos.y;
-		DrawLine(player->grapplePos.x, player->grapplePos.y, x, y, BLACK);
-
-		if (Vector2Distance(GetPlayerPos(player), player->grapplePos) > player->currGrappleLength)
-		{
-			player->collider.x = x;
-			player->collider.y = y;
-			float currVelocityMagnitude = Vector2Length(player->velocity);
-			if (currVelocityMagnitude > EPSILON) {
-				Vector2 playerToGrappleDir = Vector2Normalize(Vector2Subtract(GetPlayerPos(player), player->grapplePos));
-				int angleToRotate = 90;
-				if (player->velocity.x > 0)
-				{
-					angleToRotate *= -1;
-				}
-
-				Vector2 rotatedDir = Vector2Rotate(playerToGrappleDir, angleToRotate * DEG2RAD);
-				//Vector2 rotatedDir = {1,0};
-				Vector2 newVelocity = Vector2Scale(rotatedDir, currVelocityMagnitude);
-				player->velocity = newVelocity;
-				DrawLine(GetPlayerPos(player).x, GetPlayerPos(player).y, GetPlayerPos(player).x + newVelocity.x, GetPlayerPos(player).y + newVelocity.y, DEFAULT_COLOR);
-			}
-		}
-	}
-
 	// Updating velocity
 	//if (!player->isGrappling)
 	{
@@ -262,6 +225,65 @@ void updatePos(Player* player, Rectangle floorColliders[]) {
 	// Updating player position based on physics
 	player->collider.y += player->velocity.y * GetFrameTime();
 	player->collider.x += player->velocity.x * GetFrameTime();
+
+	// Grapple movement
+	if (player->isGrappling) {
+
+		// Debug Stuff
+		char thetaText[100], positionText[1000];
+
+		sprintf(thetaText, "Theta Deg (%.2f)", theta * RAD2DEG);
+		DrawText(thetaText, 50, 50, DEBUG_FONT_SIZE, BLACK);
+	
+
+		float x = player->CurrMaxGrappleLength * cosf(theta) + player->grapplePos.x;
+		float y = player->CurrMaxGrappleLength * sinf(theta) + player->grapplePos.y;
+		DrawLine(player->grapplePos.x, player->grapplePos.y, x, y, BLACK);
+
+		const float currGrappleLength = Vector2Distance(GetPlayerPos(player), player->grapplePos);
+		const bool isGrappleAtMaxLength = currGrappleLength > player->CurrMaxGrappleLength;
+
+		if (isGrappleAtMaxLength)
+		{
+			DrawText("Grapple Taught!", 500, 75, DEBUG_FONT_SIZE, BLACK);
+			//player->collider.x = x;
+			//player->collider.y = y;
+			Vector2 grappleToPlayer = Vector2Subtract(GetPlayerPos(player), player->grapplePos);
+			Vector2 newPos = Vector2Scale(Vector2Normalize(grappleToPlayer), player->CurrMaxGrappleLength);
+			player->collider.x = player->grapplePos.x + newPos.x;
+			player->collider.y = player->grapplePos.y + newPos.y;
+			float currVelocityMagnitude = Vector2Length(player->velocity);
+			if (currVelocityMagnitude > EPSILON) {
+				Vector2 playerToGrappleDir = Vector2Normalize(Vector2Subtract(GetPlayerPos(player), player->grapplePos));
+				int angleToRotate = 90;
+				if (player->velocity.x > 0 && ((GetTime() - player->lastFlipTime) > 10) && theta < PI && theta > PI/2)
+				{
+					angleToRotate *= -1;
+					player->lastFlipTime = GetTime();
+				}
+
+				// Tension
+				{
+					const float tension = GRAPPLE_FORCE / Vector2Distance(GetPlayerPos(player), player->grapplePos) * tensionConstant * GetFrameTime();
+					player->velocity.x -= tension * cosf(theta);
+					player->velocity.y -= tension * sinf(theta);
+
+					char TensionText[1000];
+					sprintf(TensionText, "Tension (%.2f)\nTension Constant (%.2f)", tension, tensionConstant);
+					DrawText(TensionText, 500, 150, DEBUG_FONT_SIZE, BLACK);
+				}
+				Vector2 rotatedDir = Vector2Rotate(playerToGrappleDir, angleToRotate * DEG2RAD);
+				//Vector2 rotatedDir = {1,0};
+				Vector2 newVelocity = Vector2Scale(rotatedDir, currVelocityMagnitude);
+				player->velocity = newVelocity;
+
+
+				
+			}
+		}
+	}
+
+
 
 	// Checks if the player moved below the floor and moves the player back if so - also nulls velocity
 	bool isColliding = false;
