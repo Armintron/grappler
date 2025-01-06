@@ -40,7 +40,7 @@ typedef struct Player {
 	Vector2 GrapplePathPoints[MAX_GRAPPLE_POINTS_LEN];
 	int CurrGrapplePointCount;
 	bool IsInGrapplingWindow;
-	double lastFlipTime;
+	Rectangle LastCollision;
 } Player;
 
 int getDirectionX();
@@ -50,7 +50,8 @@ void Grapple();
 void DrawPlayer(Player* player);
 void DrawRectangles(Rectangle rectangles[], int numRectangles, Color colorToDraw);
 void DrawPlayerDebug(Player* player);
-float tensionConstant = 50;
+void DrawArrow(Vector2 start, Vector2 end, Color color);
+float tensionConstant = 500;
 
 Vector2 GetRectanglePosition(Rectangle rect) {
 	return (Vector2) { rect.x, rect.y };
@@ -177,7 +178,8 @@ void DrawPlayerDebug(Player* player) {
 	DrawText(PositionText, 50, TextStartPosY + YSpacing * CurrNumText++, DEBUG_FONT_SIZE, BLACK);
 	DrawText(VelocityText, 50, TextStartPosY + YSpacing * CurrNumText++, DEBUG_FONT_SIZE, BLACK);
 	DrawText(PlayerStateText, 50, TextStartPosY + YSpacing * CurrNumText++, DEBUG_FONT_SIZE, BLACK);
-	DrawLine(GetPlayerPos(player).x, GetPlayerPos(player).y, GetPlayerPos(player).x + player->velocity.x, GetPlayerPos(player).y + player->velocity.y, PLAYER_COLOR);
+	//DrawLine(GetPlayerPos(player).x, GetPlayerPos(player).y, GetPlayerPos(player).x + player->velocity.x, GetPlayerPos(player).y + player->velocity.y, PLAYER_COLOR);
+	DrawArrow(GetPlayerPos(player), Vector2Add(GetPlayerPos(player), player->velocity), PLAYER_COLOR);
 	if (player->isGrappling)
 	{
 
@@ -191,8 +193,10 @@ void DrawPlayerDebug(Player* player) {
 			DrawCircle(player->GrapplePathPoints[i].x, player->GrapplePathPoints[i].y, 1, RED);
 		}
 	}
-}
 
+	DrawRectangleRec(player->LastCollision, DEFAULT_COLOR);
+}
+/*
 void updatePos(Player* player, Rectangle floorColliders[]) {
 	const Vector2 HorizontalPlane = { 1,0 };//, const PlayerPos = GetRectanglePosition(player->collider), const GrappleRectPos = player->grapplePos;
 	float theta = Vector2Angle(Vector2Normalize(HorizontalPlane), Vector2Normalize(Vector2Subtract(GetPlayerPos(player), player->grapplePos)));
@@ -246,12 +250,7 @@ void updatePos(Player* player, Rectangle floorColliders[]) {
 		if (isGrappleAtMaxLength)
 		{
 			DrawText("Grapple Taught!", 500, 75, DEBUG_FONT_SIZE, BLACK);
-			//player->collider.x = x;
-			//player->collider.y = y;
-			Vector2 grappleToPlayer = Vector2Subtract(GetPlayerPos(player), player->grapplePos);
-			Vector2 newPos = Vector2Scale(Vector2Normalize(grappleToPlayer), player->CurrMaxGrappleLength);
-			player->collider.x = player->grapplePos.x + newPos.x;
-			player->collider.y = player->grapplePos.y + newPos.y;
+
 			float currVelocityMagnitude = Vector2Length(player->velocity);
 			if (currVelocityMagnitude > EPSILON) {
 				Vector2 playerToGrappleDir = Vector2Normalize(Vector2Subtract(GetPlayerPos(player), player->grapplePos));
@@ -296,4 +295,108 @@ void updatePos(Player* player, Rectangle floorColliders[]) {
 		}
 	}
 	player->isMidair = !isColliding;
+}*/
+
+void DrawVector(Vector2 start, Vector2 end, Color color) {
+	DrawLine(start.x, start.y, end.x, end.y, color);
+}
+
+void DrawArrow(Vector2 start, Vector2 end, Color color) {
+	DrawVector(start, end, color);
+	Vector2 startToEnd = Vector2Subtract(end, start);
+	const float tickLength = 50;
+	Vector2 direction = Vector2Normalize(startToEnd);
+	Vector2 leftTick = Vector2Rotate(direction, 160 * DEG2RAD);
+	Vector2 rightTick = Vector2Rotate(direction, -160 * DEG2RAD);
+	DrawVector(end, Vector2Add(end, Vector2Scale(leftTick, tickLength)), color);
+	DrawVector(end, Vector2Add(end, Vector2Scale(rightTick, tickLength)), color);
+}
+
+void updatePos(Player* player, Rectangle floorColliders[]) {
+	player->velocity.y += GRAVITY * GetFrameTime();
+
+	if (player->isGrappling) {
+		DrawArrow(GetPlayerPos(player), player->grapplePos, DEFAULT_COLOR);
+		
+		const float currGrappleLength = Vector2Distance(GetPlayerPos(player), player->grapplePos);
+		const bool isGrappleAtMaxLength = currGrappleLength > player->CurrMaxGrappleLength;
+		if (isGrappleAtMaxLength) {
+			Vector2 direction = Vector2Normalize(Vector2Subtract(player->grapplePos, GetPlayerPos(player)));
+			float tension = GRAVITY * GetFrameTime() / pow(Vector2Distance(GetPlayerPos(player), player->grapplePos), 1) * tensionConstant;
+			Vector2 tensionVector = Vector2Scale(direction, tension);
+			player->velocity = Vector2Add(player->velocity, tensionVector);
+
+			char TensionText[1000];
+			sprintf(TensionText, "Tension (%.2f)\nTension Constant (%.2f)", tension, tensionConstant);
+			DrawText(TensionText, 500, 150, DEBUG_FONT_SIZE, BLACK);
+		}
+	}
+
+	// Set velocity with user input
+	if (IsKeyDown(KEY_D) && IsKeyDown(KEY_A))
+	{
+		player->velocity.x = 0;
+	}
+	else if (IsKeyDown(KEY_A))
+	{
+		player->velocity.x = -MOVE_SPEED;
+	}
+	else if (IsKeyDown(KEY_D))
+	{
+		player->velocity.x = MOVE_SPEED;
+	}
+
+	if (IsKeyPressed(KEY_SPACE) && !player->isMidair)
+	{
+		player->velocity.y = -JUMP_FORCE;
+	}
+
+	// Apply velocity to position
+	player->collider.x += player->velocity.x * GetFrameTime();
+	player->collider.y += player->velocity.y * GetFrameTime();
+
+	bool isColliding = false;
+	if (!player->isGrappling) {
+		for (int i = 0; i < 2; i++) {
+			if (CheckCollisionRecs(player->collider, floorColliders[i])) {
+				Rectangle CollisionRec = GetCollisionRec(player->collider, floorColliders[i]);
+				player->LastCollision = CollisionRec;
+				// Did we collide on the...
+				//  left?
+				if (CollisionRec.x == player->collider.x && CollisionRec.width < player->collider.width)
+				{
+					DrawText("Left", 50, 250, DEBUG_FONT_SIZE, BLACK);
+					player->collider.x += CollisionRec.width;
+					CollisionRec = GetCollisionRec(player->collider, floorColliders[i]);
+				}
+				//	bottom?
+				if ((player->collider.height + player->collider.y) > CollisionRec.y)
+				{
+					DrawText("Bottom", 50, 310, DEBUG_FONT_SIZE, BLACK);
+					player->collider.y -= CollisionRec.height;
+					CollisionRec = GetCollisionRec(player->collider, floorColliders[i]);
+				}
+				//	right?
+				//if ((CollisionRec.x + CollisionRec.width) == (player->collider.x + player->collider.width))
+				//{
+				//	DrawText("Right", 50, 270, DEBUG_FONT_SIZE, BLACK);
+				//	player->collider.x -= CollisionRec.width;
+				//}
+				//  top?
+				//if (CollisionRec.y == player->collider.y)
+				//{
+				//	DrawText("Top", 50, 290, DEBUG_FONT_SIZE, BLACK);
+				//	player->collider.y += CollisionRec.height;
+				//}
+
+				//player->collider.y = floorColliders[i].y - PLAYER_HEIGHT;
+				player->velocity.y = 0;
+				player->velocity.x = 0;
+				isColliding = true;
+				break;
+			}
+		}
+	player->isMidair = !isColliding;
+
+	}
 }
